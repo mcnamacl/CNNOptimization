@@ -99,5 +99,5 @@ under in TCD, with each name separate by a comma. So, for example, a group
 of two might have have a subject line like the following:
 HEDGEHOG Cordelia Chase, Rupert Giles
 
-A team of one might have a subject line like: testing can i commit
+A team of one might have a subject line like:
 HEDGEHOG Alexander Harris
