@@ -462,13 +462,13 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
                       int nchannels, int nkernels, int kernel_order)
 {
   // for testing original
-  // multichannel_conv_sparse(image, kernals, output, width, height, nchannels, nkernels, kernel_order);
+  // multichannel_conv_sparse(image, kernls, output, width, height, nchannels, nkernels, kernel_order);
+  // return;
 
   int h, w, x, y, c, m, index;
   float value;
 
   // initialize the output matrix to zero
-
 #pragma omp parallel for private(m, h, w)
   for (m = 0; m < nkernels; m++)
   {
@@ -481,36 +481,9 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
     }
   }
 
-  // // now compute multichannel, multikernel convolution -- input of 100 100 5 128 128 100 -- 79328
-  // int i;
-  // #pragma omp parallel for private(w, h, i, m)
-  //   for (w = 0; w < width; w++)
-  //   {
-  //     for (h = 0; h < height; h++)
-  //     {
-  //       double sum = 0.0;
-  //       int sz = kernel_order*kernel_order;
-  //       for (i = 0; i < sz; i++)
-  //       {
-  //         y = i%kernel_order;
-  //         x = i/kernel_order;
-  //         struct sparse_matrix *kernel = kernels[x][y];
-  //         for (m = 0; m < nkernels; m++)
-  //         {
-  //           for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
-  //           {
-  //             int this_c = kernel->channel_numbers[index];
-  //             assert((this_c >= 0) && (this_c < nchannels));
-  //             value = kernel->values[index];
-  //             output[m][h][w] += image[w + x][h + y][this_c] * value;
-  //           }
-  //         } // m
-  //       }   // x // y
-  //     }     // h
-  //   }       // w
   int i, j; 
   int szWH = width * height;
-  #pragma omp parallel for private(w, h, i, m)
+  #pragma omp parallel for private(j, i, m)
   for (j = 0; j < szWH; j++)
   {
     h = j % height;
