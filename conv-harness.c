@@ -509,6 +509,7 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
       }   // h
     }     // w
   }
+}
 
   int main(int argc, char **argv)
   {
