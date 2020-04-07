@@ -469,7 +469,7 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   float value;
 
   // initialize the output matrix to zero
-#pragma omp parallel for private(m, h, w)
+  //#pragma omp parallel for private(m, h, w) num_threads(8)
   for (m = 0; m < nkernels; m++)
   {
     for (h = 0; h < height; h++)
@@ -481,33 +481,33 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
     }
   }
 
-int i, j;
-int XY = kernel_order * kernel_order;
-int WH = height * width;
-#pragma omp parallel for private(j, i, m) shared (output, kernels, image)
-  // now compute multichannel, multikernel convolution
-for (j = 0; j < WH; j++)
-{
-  w = j % width;
-  h = j / height;
-  double sum = 0.0;
-  for (i = 0; i < XY; i++)
+  int i, j;
+  int XY = kernel_order * kernel_order;
+  int WH = height * width;
+  #pragma omp parallel for private(j, i, m) shared (output, kernels, image) //num_threads(8)
+    // now compute multichannel, multikernel convolution
+  for (j = 0; j < WH; j++)
   {
-    y = i % kernel_order;
-    x = i / kernel_order;
-    struct sparse_matrix *kernel = kernels[x][y];
-    for (m = 0; m < nkernels; m++)
+    w = j % width;
+    h = j / height;
+    double sum = 0.0;
+    for (i = 0; i < XY; i++)
     {
-      for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
+      y = i % kernel_order;
+      x = i / kernel_order;
+      struct sparse_matrix *kernel = kernels[x][y];
+      for (m = 0; m < nkernels; m++)
       {
-        // int this_c = kernel->channel_numbers[index];
-        // assert((this_c >= 0) && (this_c < nchannels));
-        // value = kernel->values[index];
-        output[m][h][w] += image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
-      }
-    } // m
-  } // x // y
-}   // h // w
+        for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
+        {
+          // int this_c = kernel->channel_numbers[index];
+          // assert((this_c >= 0) && (this_c < nchannels));
+          // value = kernel->values[index];
+          output[m][h][w] += image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
+        }
+      } // m
+    } // x // y
+  }   // h // w
   
 }
 
