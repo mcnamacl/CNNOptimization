@@ -470,49 +470,49 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
 
   // initialize the output matrix to zero
   #pragma omp parallel for private(m, h, w)
-    for (m = 0; m < nkernels; m++)
+  for (m = 0; m < nkernels; m++)
+  {
+    for (h = 0; h < height; h++)
     {
-      for (h = 0; h < height; h++)
+      for (w = 0; w < width; w++)
       {
-        for (w = 0; w < width; w++)
-        {
-          output[m][h][w] = 0.0;
-        }
+        output[m][h][w] = 0.0;
       }
     }
+  }
 
-    int i, j;
-    float msum;
-    int XY = kernel_order * kernel_order;
-    int WH = height * width;
+  int i, j;
+  float msum;
+  int XY = kernel_order * kernel_order;
+  int WH = height * width;
   #pragma omp parallel for private(j, i, m) shared(output, kernels, image)
-    // now compute multichannel, multikernel convolution
-    for (j = 0; j < WH; j++)
+  // now compute multichannel, multikernel convolution
+  for (j = 0; j < WH; j++)
+  {
+    w = j % width;
+    h = j / height;
+    // double sum = 0.0;
+    for (i = 0; i < XY; i++)
     {
-      w = j % width;
-      h = j / height;
-      // double sum = 0.0;
-      for (i = 0; i < XY; i++)
+      y = i % kernel_order;
+      x = i / kernel_order;
+      struct sparse_matrix *kernel = kernels[x][y];
+      for (m = 0; m < nkernels; m++)
       {
-        y = i % kernel_order;
-        x = i / kernel_order;
-        struct sparse_matrix *kernel = kernels[x][y];
-        for (m = 0; m < nkernels; m++)
+        msum = output[m][h][w];
+        for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
         {
-          msum = output[m][h][w];
-          for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
-          {
-            // int this_c = kernel->channel_numbers[index];
-            // assert((this_c >= 0) && (this_c < nchannels));
-            // value = kernel->values[index];
-            // output[m][h][w] +=  image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
-            msum += image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
-          }
-          output[m][h][w] = msum;
-          // m
-        } // x // y
-      }   // h
-    }     // w
+          // int this_c = kernel->channel_numbers[index];
+          // assert((this_c >= 0) && (this_c < nchannels));
+          // value = kernel->values[index];
+          // output[m][h][w] +=  image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
+          msum += image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
+        }
+        output[m][h][w] = msum;
+        // m
+      } // x // y
+    }   // h
+  }     // w
 }
 
 int main(int argc, char **argv)
