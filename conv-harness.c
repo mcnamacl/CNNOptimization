@@ -469,140 +469,144 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   float value;
 
   // initialize the output matrix to zero
-  //#pragma omp parallel for private(m, h, w) num_threads(8)
-  for (m = 0; m < nkernels; m++)
-  {
-    for (h = 0; h < height; h++)
+  #pragma omp parallel for private(m, h, w)
+    for (m = 0; m < nkernels; m++)
     {
-      for (w = 0; w < width; w++)
+      for (h = 0; h < height; h++)
       {
-        output[m][h][w] = 0.0;
+        for (w = 0; w < width; w++)
+        {
+          output[m][h][w] = 0.0;
+        }
       }
     }
-  }
 
-  int i, j;
-  int XY = kernel_order * kernel_order;
-  int WH = height * width;
-  #pragma omp parallel for private(j, i, m) shared (output, kernels, image) //num_threads(8)
+    int i, j;
+    float msum;
+    int XY = kernel_order * kernel_order;
+    int WH = height * width;
+  #pragma omp parallel for private(j, i, m) shared(output, kernels, image)
     // now compute multichannel, multikernel convolution
-  for (j = 0; j < WH; j++)
-  {
-    w = j % width;
-    h = j / height;
-    double sum = 0.0;
-    for (i = 0; i < XY; i++)
+    for (j = 0; j < WH; j++)
     {
-      y = i % kernel_order;
-      x = i / kernel_order;
-      struct sparse_matrix *kernel = kernels[x][y];
-      for (m = 0; m < nkernels; m++)
+      w = j % width;
+      h = j / height;
+      // double sum = 0.0;
+      for (i = 0; i < XY; i++)
       {
-        for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
+        y = i % kernel_order;
+        x = i / kernel_order;
+        struct sparse_matrix *kernel = kernels[x][y];
+        for (m = 0; m < nkernels; m++)
         {
-          // int this_c = kernel->channel_numbers[index];
-          // assert((this_c >= 0) && (this_c < nchannels));
-          // value = kernel->values[index];
-          output[m][h][w] += image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
-        }
-      } // m
-    } // x // y
-  }   // h // w
-  
+          msum = output[m][h][w];
+          for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
+          {
+            // int this_c = kernel->channel_numbers[index];
+            // assert((this_c >= 0) && (this_c < nchannels));
+            // value = kernel->values[index];
+            // output[m][h][w] +=  image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
+            msum += image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
+          }
+          output[m][h][w] = msum;
+          // m
+        } // x // y
+      }   // h
+    }     // w
 }
 
-  int main(int argc, char **argv)
+int main(int argc, char **argv)
+{
+  //float image[W][H][C];
+  //float kernels[M][C][K][K];
+  //float output[M][W][H];
+
+  float ***image;
+  float ****kernels;
+  struct sparse_matrix ***sparse_kernels = NULL;
+  float ***control_output, ***output;
+  long long mul_time;
+  int width, height, kernel_order, nchannels, nkernels;
+  struct timeval start_time;
+  struct timeval stop_time;
+  int nz_ratio = 1; // by default we just have a dense matrix
+
+  if (argc != 7)
   {
-    //float image[W][H][C];
-    //float kernels[M][C][K][K];
-    //float output[M][W][H];
-
-    float ***image;
-    float ****kernels;
-    struct sparse_matrix ***sparse_kernels = NULL;
-    float ***control_output, ***output;
-    long long mul_time;
-    int width, height, kernel_order, nchannels, nkernels;
-    struct timeval start_time;
-    struct timeval stop_time;
-    int nz_ratio = 1; // by default we just have a dense matrix
-
-    if (argc != 7)
-    {
-      fprintf(stderr, "Usage: conv-harness <image_width> <image_height> <kernel_order> <number of channels> <number of kernels> <non-zero ratio>\n");
-      exit(1);
-    }
-    else
-    {
-      width = atoi(argv[1]);
-      height = atoi(argv[2]);
-      kernel_order = atoi(argv[3]);
-      nchannels = atoi(argv[4]);
-      nkernels = atoi(argv[5]);
-      nz_ratio = atoi(argv[6]);
-    }
-    switch (kernel_order)
-    {
-    case 1:
-    case 3:
-    case 5:
-    case 7:
-      break;
-    default:
-      fprintf(stderr, "FATAL: kernel_order must be 1, 3, 5 or 7, not %d\n",
-              kernel_order);
-      exit(1);
-    }
-
-    assert(width >= 1);
-    assert(height >= 1);
-    assert(nchannels >= 1);
-    assert(nkernels >= 1);
-    assert(nz_ratio >= 1);
-
-    /* allocate the matrices */
-    image = gen_random_3d_matrix(width + kernel_order, height + kernel_order,
-                                 nchannels, 1); // nz_ratio == 1, ie no sparsity
-    kernels = gen_random_4d_matrix(kernel_order, kernel_order, nkernels, nchannels, nz_ratio);
-    if (nz_ratio > 1)
-    { // we have sparsity
-      sparse_kernels = kernels_dense2sparse(kernels, kernel_order, nkernels, nchannels);
-    }
-
-    output = new_empty_3d_matrix(nkernels, width, height);
-
-    control_output = new_empty_3d_matrix(nkernels, width, height);
-
-    /* use a simple multichannel convolution routine to produce control result */
-    multichannel_conv_dense(image, kernels, control_output, width,
-                            height, nchannels, nkernels, kernel_order);
-
-    /* record starting time of team's code*/
-    gettimeofday(&start_time, NULL);
-
-    if (nz_ratio > 1)
-    { // we're working on a sparse matrix
-      /* perform student team's sparse multichannel convolution */
-      team_conv_sparse(image, sparse_kernels, output, width,
-                       height, nchannels, nkernels, kernel_order);
-    }
-    else
-    { // we're working on a dense matrix
-      multichannel_conv_dense(image, kernels, output, width,
-                              height, nchannels, nkernels, kernel_order);
-    }
-    /* record finishing time */
-    gettimeofday(&stop_time, NULL);
-
-    mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
-               (stop_time.tv_usec - start_time.tv_usec);
-    printf("Team conv time: %lld microseconds\n", mul_time);
-
-    DEBUGGING(write_out(output, nkernels, width, height));
-
-    /* now check that the team's multichannel convolution routine
-     gives the same answer as the known working version */
-    check_result(output, control_output, nkernels, width, height);
-
-    return 0;
+    fprintf(stderr, "Usage: conv-harness <image_width> <image_height> <kernel_order> <number of channels> <number of kernels> <non-zero ratio>\n");
+    exit(1);
   }
+  else
+  {
+    width = atoi(argv[1]);
+    height = atoi(argv[2]);
+    kernel_order = atoi(argv[3]);
+    nchannels = atoi(argv[4]);
+    nkernels = atoi(argv[5]);
+    nz_ratio = atoi(argv[6]);
+  }
+  switch (kernel_order)
+  {
+  case 1:
+  case 3:
+  case 5:
+  case 7:
+    break;
+  default:
+    fprintf(stderr, "FATAL: kernel_order must be 1, 3, 5 or 7, not %d\n",
+            kernel_order);
+    exit(1);
+  }
+
+  assert(width >= 1);
+  assert(height >= 1);
+  assert(nchannels >= 1);
+  assert(nkernels >= 1);
+  assert(nz_ratio >= 1);
+
+  /* allocate the matrices */
+  image = gen_random_3d_matrix(width + kernel_order, height + kernel_order,
+                               nchannels, 1); // nz_ratio == 1, ie no sparsity
+  kernels = gen_random_4d_matrix(kernel_order, kernel_order, nkernels, nchannels, nz_ratio);
+  if (nz_ratio > 1)
+  { // we have sparsity
+    sparse_kernels = kernels_dense2sparse(kernels, kernel_order, nkernels, nchannels);
+  }
+
+  output = new_empty_3d_matrix(nkernels, width, height);
+
+  control_output = new_empty_3d_matrix(nkernels, width, height);
+
+  /* use a simple multichannel convolution routine to produce control result */
+  multichannel_conv_dense(image, kernels, control_output, width,
+                          height, nchannels, nkernels, kernel_order);
+
+  /* record starting time of team's code*/
+  gettimeofday(&start_time, NULL);
+
+  if (nz_ratio > 1)
+  { // we're working on a sparse matrix
+    /* perform student team's sparse multichannel convolution */
+    team_conv_sparse(image, sparse_kernels, output, width,
+                     height, nchannels, nkernels, kernel_order);
+  }
+  else
+  { // we're working on a dense matrix
+    multichannel_conv_dense(image, kernels, output, width,
+                            height, nchannels, nkernels, kernel_order);
+  }
+  /* record finishing time */
+  gettimeofday(&stop_time, NULL);
+
+  mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
+             (stop_time.tv_usec - start_time.tv_usec);
+  printf("Team conv time: %lld microseconds\n", mul_time);
+
+  DEBUGGING(write_out(output, nkernels, width, height));
+
+  /* now check that the team's multichannel convolution routine
+     gives the same answer as the known working version */
+  check_result(output, control_output, nkernels, width, height);
+
+  return 0;
+}
