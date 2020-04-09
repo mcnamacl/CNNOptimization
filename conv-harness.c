@@ -463,7 +463,6 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
 {
 
   int h, w, x, y, c, m, index;
-  float value;
 
   // initialize the output matrix to zero
   #pragma omp parallel for private(m, h, w)
@@ -484,24 +483,34 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   int WH = height * width;
   struct sparse_matrix *kernel;
   float* imageReference;
+  int* kernel_starts;
+  int *kernel_channel_number_reference;
+  float *kernel_value_reference;
   
   #pragma omp parallel for private(j, i, m) shared(output, kernels, image)
   for (j = 0; j < WH; j++)
   {
     w = j % width;
+    //w = (((uint64_t) j * (uint64_t) width) >> 32);
     h = j / height;
     for (i = 0; i < XY; i++)
     {
       y = i % kernel_order;
+      //y = ((uint64_t) y * (uint64_t) kernel_order) >> 32;
       x = i / kernel_order;
       kernel = kernels[x][y];
       imageReference = image[w + x][h + y];
+
+      kernel_channel_number_reference = kernel->channel_numbers;
+      kernel_value_reference = kernel->values;
+      kernel_starts = kernel->kernel_starts;
+
       for (m = 0; m < nkernels; m++)
       {
         msum = output[m][h][w];
-        for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
+        for (index = kernel_starts[m]; index < kernel_starts[m + 1]; index++)
         {
-          msum += imageReference[kernel->channel_numbers[index]] * kernel->values[index];
+          msum += imageReference[kernel_channel_number_reference[index]] * kernel_value_reference[index];
         }
         output[m][h][w] = msum;
       } // m
