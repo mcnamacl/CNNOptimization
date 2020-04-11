@@ -486,18 +486,20 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   int* kernel_starts;
   int *kernel_channel_number_reference;
   float *kernel_value_reference;
+  float height_reciprocal = 1.0 / (float)height;
+  float kernerl_order_reciprocal = 1.0 / (float)kernel_order;
   
   #pragma omp parallel for private(j, i, m) shared(output, kernels, image)
   for (j = 0; j < WH; j++)
   {
     w = j % width;
     //w = (((uint64_t) j * (uint64_t) width) >> 32);
-    h = j / height;
+    h = j * height_reciprocal;
     for (i = 0; i < XY; i++)
     {
       y = i % kernel_order;
       //y = ((uint64_t) y * (uint64_t) kernel_order) >> 32;
-      x = i / kernel_order;
+      x = i * kernerl_order_reciprocal;
       kernel = kernels[x][y];
       imageReference = image[w + x][h + y];
 
@@ -508,9 +510,9 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
       for (m = 0; m < nkernels; m++)
       {
         msum = output[m][h][w];
-        for (index = kernel_starts[m]; index < kernel_starts[m + 1]; index++)
+        for (index = kernel->kernel_starts[m]; index < kernel_starts[m + 1]; index++)
         {
-          msum += imageReference[kernel_channel_number_reference[index]] * kernel_value_reference[index];
+          msum += imageReference[kernel->channel_numbers[index]] * kernel->values[index];
         }
         output[m][h][w] = msum;
       } // m
