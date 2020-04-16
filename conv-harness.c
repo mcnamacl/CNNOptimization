@@ -461,63 +461,68 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
                       float ***output, int width, int height,
                       int nchannels, int nkernels, int kernel_order)
 {
+  // for testing original
+  // multichannel_conv_sparse(image, kernels, output, width, height, nchannels, nkernels, kernel_order);
+  // return;
 
   int h, w, x, y, c, m, index;
+
   // initialize the output matrix to zero
-  #pragma omp parallel for private(m, h, w)
+#pragma omp parallel for private(m, h, w) shared(output)
   for (m = 0; m < nkernels; m++)
   {
     for (h = 0; h < height; h++)
     {
-       for(w = 0; w < width; w++)
-       {
-         output[m][h][w] = 0.0;
-       }
+      for (w = 0; w < width; w++)
+      {
+        output[m][h][w] = 0.0;
+      }
     }
   }
-   
+
   int i, j;
   float msum;
   int XY = kernel_order * kernel_order;
   int WH = height * width;
   struct sparse_matrix *kernel;
-  float* imageReference;
-  int* kernel_starts;
+  float *imageReference;
+  int *kernel_starts;
   int *kernel_channel_number_reference;
   float *kernel_value_reference;
   float height_reciprocal = 1.0 / (float)height;
-  float kernerl_order_reciprocal = 1.0 / (float)kernel_order;
+  float kernel_order_reciprocal = 1.0 / (float)kernel_order;
 
-  #pragma omp parallel for private(j, i, m, msum, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image)
+#pragma omp parallel for private(j, i, m, c, msum, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image)
   for (m = 0; m < nkernels; m++)
   {
-    for (j = 0; j < WH; j++)
+    for (i = 0; i < XY; i++)
     {
-      w = j % width;
-      //w = (((uint64_t) j * (uint64_t) width) >> 32);
-      h = j * height_reciprocal;
-      for (i = 0; i < XY; i++)
+      y = i % kernel_order;
+      x = i * kernel_order_reciprocal;
+
+      kernel = kernels[x][y];
+
+      kernel_channel_number_reference = kernel->channel_numbers;
+      kernel_value_reference = kernel->values;
+      kernel_starts = kernel->kernel_starts;
+
+      for (j = 0; j < WH; j++)
       {
-        y = i % kernel_order;
-        //y = ((uint64_t) y * (uint64_t) kernel_order) >> 32;
-        x = i * kernerl_order_reciprocal;
-        kernel = kernels[x][y];
+        w = j % width;
+        h = j * height_reciprocal;
+
         imageReference = image[w + x][h + y];
 
-        kernel_channel_number_reference = kernel->channel_numbers;
-        kernel_value_reference = kernel->values;
-        kernel_starts = kernel->kernel_starts;
-
         msum = output[m][h][w];
-        for (index = kernel->kernel_starts[m]; index < kernel_starts[m + 1]; index++)
-        {
-          msum += imageReference[kernel->channel_numbers[index]] * kernel->values[index];
+
+        for (index = kernel_starts[m]; index < kernel_starts[m + 1]; index++)
+        {     
+          msum = msum + image[w + x][h + y][kernel_channel_number_reference[index]] * kernel_value_reference[index];
         }
         output[m][h][w] = msum;
-
-      } // x y
-    } // h w
-  } // m
+      }
+    }
+  }
 }
 
 int main(int argc, char **argv)
