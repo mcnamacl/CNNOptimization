@@ -456,6 +456,14 @@ void multichannel_conv_sparse(float ***image, struct sparse_matrix ***kernels,
 // number of kernels: 32..2048 (always powers of 2)
 // nz_ratio: 20..1000
 
+float hsum_ps_sse3(__m128 v) {
+    __m128 shuf = _mm_movehdup_ps(v);        // broadcast elements 3,1 to 2,0
+    __m128 sums = _mm_add_ps(v, shuf);
+    shuf        = _mm_movehl_ps(shuf, sums); // high half -> low half
+    sums        = _mm_add_ss(sums, shuf);
+    return        _mm_cvtss_f32(sums);
+}
+
 /* the fast version of sparse convolution written by the team */
 void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
                       float ***output, int width, int height,
@@ -478,7 +486,7 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   }
 
   int i, j;
-  float msum;
+  float msum0, msum1, msum2, msum3;
   int XY = kernel_order * kernel_order;
   int WH = height * width;
   struct sparse_matrix *kernel;
@@ -489,7 +497,7 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   float height_reciprocal = 1.0 / (float)height;
   float kernerl_order_reciprocal = 1.0 / (float)kernel_order;
   
-  #pragma omp parallel for private(j, i, m, msum, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image) 
+  #pragma omp parallel for private(j, i, m, msum0, msum1, msum2, msum3, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image) 
   for (j = 0; j < WH; j++)
   {
     w = j % width;
@@ -507,15 +515,50 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
       kernel_value_reference = kernel->values;
       kernel_starts = kernel->kernel_starts;
 
-      for (m = 0; m < nkernels; m++)
+
+      float temp[4];
+      __m128 add = _mm_setzero_ps();
+      __m128 multiply = _mm_setzero_ps();
+
+      for (m = 0; m + 4 < nkernels; m+=4)
       {
-        msum = output[m][h][w];
+        msum0 = output[m][h][w];
+        msum1 = output[m+1][h][w];
+        msum2 = output[m+2][h][w];
+        msum3 = output[m+3][h][w];
+
         for (index = kernel->kernel_starts[m]; index < kernel_starts[m + 1]; index++)
         {
-          msum += imageReference[kernel->channel_numbers[index]] * kernel->values[index];
+          __m128 img_vec = _mm_loadu_ps(&imageReference[kernel->channel_numbers[index]]);
+          __m128 kern_vec = _mm_loadu_ps(&kernel->values[index]);
+          multiply = _mm_mul_ps(img_vec, kern_vec);
+          add = _mm_hadd_ps(multiply, multiply);
+          add = _mm_hadd_ps(add, add);
+          _mm_store_ps(temp, add);
+          msum0 += temp[0];
+          msum1 += temp[1];
+          msum2 += temp[2];
+          msum3 += temp[3];
+
+          //msum += imageReference[kernel->channel_numbers[index]] * kernel->values[index];
         }
-        output[m][h][w] = msum;
+        output[m][h][w] = (float) msum0;
+        output[m+1][h][w] = (float) msum1;
+        output[m+2][h][w] = (float) msum2;
+        output[m+3][h][w] = (float) msum3;
       } // m
+
+      // for (; m < nkernels; m++)
+      // {
+      //   msum = output[m][h][w];
+      //   for (index = kernel->kernel_starts[m]; index < kernel_starts[m + 1]; index++)
+      //   {
+      //     msum += imageReference[kernel->channel_numbers[index]] * kernel->values[index];
+      //   }
+      //   output[m][h][w] = msum;
+      // } // m
+
+
     }   // x y
   }     // h w
 }
@@ -583,8 +626,8 @@ int main(int argc, char **argv)
   control_output = new_empty_3d_matrix(nkernels, width, height);
 
   /* use a simple multichannel convolution routine to produce control result */
-  // multichannel_conv_dense(image, kernels, control_output, width,
-  //                         height, nchannels, nkernels, kernel_order);
+  multichannel_conv_dense(image, kernels, control_output, width,
+                          height, nchannels, nkernels, kernel_order);
 
   /* record starting time of team's code*/
   gettimeofday(&start_time, NULL);
@@ -611,7 +654,7 @@ int main(int argc, char **argv)
 
   /* now check that the team's multichannel convolution routine
      gives the same answer as the known working version */
-  // check_result(output, control_output, nkernels, width, height);
+  check_result(output, control_output, nkernels, width, height);
 
   return 0;
 }
