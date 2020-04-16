@@ -463,7 +463,6 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
 {
 
   int h, w, x, y, c, m, index;
-   
   // initialize the output matrix to zero
   #pragma omp parallel for private(m, h, w)
   for (m = 0; m < nkernels; m++)
@@ -476,7 +475,7 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
        }
     }
   }
-
+   
   int i, j;
   float msum;
   int XY = kernel_order * kernel_order;
@@ -488,36 +487,37 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   float *kernel_value_reference;
   float height_reciprocal = 1.0 / (float)height;
   float kernerl_order_reciprocal = 1.0 / (float)kernel_order;
-  
-  #pragma omp parallel for private(j, i, m, msum, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image) 
-  for (j = 0; j < WH; j++)
+
+  #pragma omp parallel for private(j, i, m, msum, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image)
+  for (m = 0; m < nkernels; m++)
   {
-    w = j % width;
-    //w = (((uint64_t) j * (uint64_t) width) >> 32);
-    h = j * height_reciprocal;
-    for (i = 0; i < XY; i++)
+    for (j = 0; j < WH; j++)
     {
-      y = i % kernel_order;
-      //y = ((uint64_t) y * (uint64_t) kernel_order) >> 32;
-      x = i * kernerl_order_reciprocal;
-      kernel = kernels[x][y];
-      imageReference = image[w + x][h + y];
-
-      kernel_channel_number_reference = kernel->channel_numbers;
-      kernel_value_reference = kernel->values;
-      kernel_starts = kernel->kernel_starts;
-
-      for (m = 0; m < nkernels; m++)
+      w = j % width;
+      //w = (((uint64_t) j * (uint64_t) width) >> 32);
+      h = j * height_reciprocal;
+      for (i = 0; i < XY; i++)
       {
+        y = i % kernel_order;
+        //y = ((uint64_t) y * (uint64_t) kernel_order) >> 32;
+        x = i * kernerl_order_reciprocal;
+        kernel = kernels[x][y];
+        imageReference = image[w + x][h + y];
+
+        kernel_channel_number_reference = kernel->channel_numbers;
+        kernel_value_reference = kernel->values;
+        kernel_starts = kernel->kernel_starts;
+
         msum = output[m][h][w];
         for (index = kernel->kernel_starts[m]; index < kernel_starts[m + 1]; index++)
         {
           msum += imageReference[kernel->channel_numbers[index]] * kernel->values[index];
         }
         output[m][h][w] = msum;
-      } // m
-    }   // x y
-  }     // h w
+
+      } // x y
+    } // h w
+  } // m
 }
 
 int main(int argc, char **argv)
@@ -583,8 +583,8 @@ int main(int argc, char **argv)
   control_output = new_empty_3d_matrix(nkernels, width, height);
 
   /* use a simple multichannel convolution routine to produce control result */
-  // multichannel_conv_dense(image, kernels, control_output, width,
-  //                         height, nchannels, nkernels, kernel_order);
+  multichannel_conv_dense(image, kernels, control_output, width,
+                          height, nchannels, nkernels, kernel_order);
 
   /* record starting time of team's code*/
   gettimeofday(&start_time, NULL);
@@ -611,7 +611,7 @@ int main(int argc, char **argv)
 
   /* now check that the team's multichannel convolution routine
      gives the same answer as the known working version */
-  // check_result(output, control_output, nkernels, width, height);
+  check_result(output, control_output, nkernels, width, height);
 
   return 0;
 }
