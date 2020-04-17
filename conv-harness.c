@@ -39,6 +39,7 @@
 #include <omp.h>
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 
 /* the following two definitions of DEBUGGING control whether or not
    debugging information is written out. To put the program into
@@ -463,8 +464,9 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
 {
   int h, w, x, y, c, m, index;
 
-  // initialize the output matrix to zero
-#pragma omp parallel for private(m, h, w) shared(output)
+// initialize the output matrix to zero
+// Parallelise m, h and w.
+#pragma omp parallel for private(m, h, w) shared(output) collapse(3)
   for (m = 0; m < nkernels; m++)
   {
     for (h = 0; h < height; h++)
@@ -478,59 +480,29 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
 
   float msum;
   struct sparse_matrix *kernel;
-  int trial, num;
 
-  __m128 vec, img_vec, kern_vec;
-
-#pragma omp parallel for private(m, h, w, msum, vec, img_vec, kern_vec, x, y, kernel, index, num, trial) shared(output, kernels, image) collapse(3)
+// Parallelise m, h, and w.
+#pragma omp parallel for private(m, h, w, msum, x, y, kernel, index) shared(output, kernels, image) collapse(3)
   for (m = 0; m < nkernels; m++)
   {
     for (h = 0; h < height; h++)
     {
       for (w = 0; w < width; w++)
       {
+        // Save the value in a local variable that can be easily accessed.
         msum = output[m][h][w];
         for (x = 0; x < kernel_order; x++)
         {
           for (y = 0; y < kernel_order; y++)
           {
             kernel = kernels[x][y];
-
             for (index = kernel->kernel_starts[m]; index < kernel->kernel_starts[m + 1]; index++)
             {
-
-              // vec = _mm_setzero_ps();
-              // img_vec = _mm_setzero_ps();
-
-              // for (index = kernel->kernel_starts[m]; index + 4 <= kernel->kernel_starts[m + 1]; index = index + 4)
-              // {
-              //   kern_vec = _mm_loadu_ps(&kernel->values[index]);
-
-              //   num = 0;
-
-              //   trial = index;
-
-              //   for (; trial < index + 4; trial++)
-              //   {
-              //     img_vec[num] = image[w + x][h + y][kernel->channel_numbers[trial]];
-              //     num++;
-              //   }
-
-              //   vec = _mm_mul_ps(img_vec, kern_vec);
-              //   vec = _mm_hadd_ps(vec, vec);
-              //   vec = _mm_hadd_ps(vec, vec);
-              //   msum = msum + vec[0];
-              // }
-              // while (index < kernel->kernel_starts[m + 1])
-              // {
-              //   msum = msum + image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
-              //   index++;
-              // }
-
               msum = msum + image[w + x][h + y][kernel->channel_numbers[index]] * kernel->values[index];
             }
           }
         }
+        // Save the new sum into output.
         output[m][h][w] = msum;
       }
     }
@@ -598,6 +570,7 @@ int main(int argc, char **argv)
   output = new_empty_3d_matrix(nkernels, width, height);
 
   control_output = new_empty_3d_matrix(nkernels, width, height);
+  control_output = new_empty_3d_matrix(nkernels, width, height);
 
   /* use a simple multichannel convolution routine to produce control result */
   multichannel_conv_dense(image, kernels, control_output, width,
@@ -609,6 +582,13 @@ int main(int argc, char **argv)
   if (nz_ratio > 1)
   { // we're working on a sparse matrix
     /* perform student team's sparse multichannel convolution */
+
+    // Used when testing the code to compare timings.
+    // multichannel_conv_sparse(image, sparse_kernels, output, width,
+    //                  height, nchannels, nkernels, kernel_order);
+    // multichannel_conv_sparse(image, sparse_kernels, output, width,
+    //                  height, nchannels, nkernels, kernel_order);
+
     team_conv_sparse(image, sparse_kernels, output, width,
                      height, nchannels, nkernels, kernel_order);
   }
@@ -622,7 +602,9 @@ int main(int argc, char **argv)
 
   mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
              (stop_time.tv_usec - start_time.tv_usec);
-  printf("Teams conv time: %lld microseconds\n", mul_time);
+  // Used when testing the code to compare timings.
+  // printf("Prof. Gregg conv time: %lld microseconds\n", mul_time);
+  printf("Team conv time: %lld microseconds\n", mul_time);
 
   DEBUGGING(write_out(output, nkernels, width, height));
 
