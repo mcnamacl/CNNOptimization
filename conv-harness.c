@@ -548,10 +548,10 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
           //   msum2 = msum2 + temp[tmp];
           // }
 
-          msum = msum + image[w + x][h + y][kernel->channel_numbers[index]] * kernel_value_reference[index];
-          msum = msum + image[w + x][h + y][kernel->channel_numbers[index + 1]] * kernel_value_reference[index + 1];
-          msum = msum + image[w + x][h + y][kernel->channel_numbers[index + 2]] * kernel_value_reference[index + 2];
-          msum = msum + image[w + x][h + y][kernel->channel_numbers[index + 3]] * kernel_value_reference[index + 3];
+          msum = msum + imageReference[kernel->channel_numbers[index]] * kernel_value_reference[index];
+          msum = msum + imageReference[kernel->channel_numbers[index + 1]] * kernel_value_reference[index + 1];
+          msum = msum + imageReference[kernel->channel_numbers[index + 2]] * kernel_value_reference[index + 2];
+          msum = msum + imageReference[kernel->channel_numbers[index + 3]] * kernel_value_reference[index + 3];
 
           // printf("sum %f\n", image[w + x][h + y][kernel->channel_numbers[index]] * kernel_value_reference[index]);
           // printf("sum %f\n", image[w + x][h + y][kernel->channel_numbers[index+1]] * kernel_value_reference[index+1]);
@@ -637,8 +637,8 @@ int main(int argc, char **argv)
   control_output = new_empty_3d_matrix(nkernels, width, height);
 
   /* use a simple multichannel convolution routine to produce control result */
-  // multichannel_conv_dense(image, kernels, control_output, width,
-  //                         height, nchannels, nkernels, kernel_order);
+  multichannel_conv_dense(image, kernels, control_output, width,
+                          height, nchannels, nkernels, kernel_order);
 
   /* record starting time of team's code*/
   gettimeofday(&start_time, NULL);
@@ -665,7 +665,7 @@ int main(int argc, char **argv)
 
   /* now check that the team's multichannel convolution routine
      gives the same answer as the known working version */
-  // check_result(output, control_output, nkernels, width, height);
+  check_result(output, control_output, nkernels, width, height);
 
   return 0;
 }
