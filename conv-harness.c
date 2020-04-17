@@ -479,8 +479,9 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
       }
     }
   }
+  
 
-  int i, j;
+  int i, j, kernal_start_index, kernel_end_index;
   float msum;
   int XY = kernel_order * kernel_order;
   int WH = height * width;
@@ -492,35 +493,83 @@ void team_conv_sparse(float ***image, struct sparse_matrix ***kernels,
   float height_reciprocal = 1.0 / (float)height;
   float kernel_order_reciprocal = 1.0 / (float)kernel_order;
 
-#pragma omp parallel for private(j, i, m, c, msum, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image)
+  float temp[4];
+
+  int test, trial, num, tmp;
+
+  float msum2;
+  __m128 prod_vec, img_vec, kern_vec;
+
+#pragma omp parallel for private(j, i, m, c, test, trial, tmp, num, msum, msum2, prod_vec, img_vec, kern_vec, w, h, x, index, kernel, imageReference, kernel_channel_number_reference, kernel_value_reference, kernel_starts) shared(output, kernels, image)
   for (m = 0; m < nkernels; m++)
   {
-    for (i = 0; i < XY; i++)
+    for (j = 0; j < WH; j++)
     {
-      y = i % kernel_order;
-      x = i * kernel_order_reciprocal;
+      w = j % width;
+      h = j * height_reciprocal;
 
-      kernel = kernels[x][y];
+      msum = output[m][h][w];
 
-      kernel_channel_number_reference = kernel->channel_numbers;
-      kernel_value_reference = kernel->values;
-      kernel_starts = kernel->kernel_starts;
+      float msum2 = msum;
 
-      for (j = 0; j < WH; j++)
+      for (i = 0; i < XY; i++)
       {
-        w = j % width;
-        h = j * height_reciprocal;
+        y = i % kernel_order;
+        x = i * kernel_order_reciprocal;
+
+        kernel = kernels[x][y];
+
+        kernel_channel_number_reference = kernel->channel_numbers;
+        kernel_value_reference = kernel->values;
+        kernel_starts = kernel->kernel_starts;
+
+        kernal_start_index = kernel_starts[m];
+        kernel_end_index = kernel_starts[m + 1];
 
         imageReference = image[w + x][h + y];
 
-        msum = output[m][h][w];
+        // prod_vec = _mm_setzero_ps();
+        // img_vec = _mm_setzero_ps();
 
-        for (index = kernel_starts[m]; index < kernel_starts[m + 1]; index++)
-        {     
-          msum = msum + image[w + x][h + y][kernel_channel_number_reference[index]] * kernel_value_reference[index];
+        for (index = kernal_start_index; index + 4 < kernel_end_index; index = index + 4)
+        {
+          // kern_vec = _mm_loadu_ps(&kernel_value_reference[index]);
+          // num = 0;
+          // for (trial = kernal_start_index; trial < kernal_start_index + 4; trial++)
+          // {
+          //   img_vec[num] = imageReference[kernel->channel_numbers[trial]];
+          //   num++;
+          // }
+          // prod_vec = _mm_mul_ps(img_vec, kern_vec);
+          // _mm_store_ps(temp, prod_vec);
+
+          // for (tmp = 0; tmp < 4; tmp++)
+          // {
+          //   msum2 = msum2 + temp[tmp];
+          // }
+
+          msum = msum + image[w + x][h + y][kernel->channel_numbers[index]] * kernel_value_reference[index];
+          msum = msum + image[w + x][h + y][kernel->channel_numbers[index + 1]] * kernel_value_reference[index + 1];
+          msum = msum + image[w + x][h + y][kernel->channel_numbers[index + 2]] * kernel_value_reference[index + 2];
+          msum = msum + image[w + x][h + y][kernel->channel_numbers[index + 3]] * kernel_value_reference[index + 3];
+
+          // printf("sum %f\n", image[w + x][h + y][kernel->channel_numbers[index]] * kernel_value_reference[index]);
+          // printf("sum %f\n", image[w + x][h + y][kernel->channel_numbers[index+1]] * kernel_value_reference[index+1]);
+          // printf("sum %f\n", image[w + x][h + y][kernel->channel_numbers[index+2]] * kernel_value_reference[index+2]);
+          // printf("sum %f\n", image[w + x][h + y][kernel->channel_numbers[index+3]] * kernel_value_reference[index+3]);
+
+          // printf("HELLO msum %f vs msum2 %f\n", msum, msum2);
+          // test = 1;
+          // break;
         }
-        output[m][h][w] = msum;
+        while (index < kernel_end_index)
+        {
+          msum = msum + imageReference[kernel_channel_number_reference[index]] * kernel_value_reference[index];
+          // msum2 = msum2 + imageReference[kernel_channel_number_reference[index]] * kernel_value_reference[index];
+          index++;
+        }
       }
+      output[m][h][w] = msum;
     }
   }
 }
@@ -588,8 +637,8 @@ int main(int argc, char **argv)
   control_output = new_empty_3d_matrix(nkernels, width, height);
 
   /* use a simple multichannel convolution routine to produce control result */
-  multichannel_conv_dense(image, kernels, control_output, width,
-                          height, nchannels, nkernels, kernel_order);
+  // multichannel_conv_dense(image, kernels, control_output, width,
+  //                         height, nchannels, nkernels, kernel_order);
 
   /* record starting time of team's code*/
   gettimeofday(&start_time, NULL);
@@ -616,7 +665,7 @@ int main(int argc, char **argv)
 
   /* now check that the team's multichannel convolution routine
      gives the same answer as the known working version */
-  check_result(output, control_output, nkernels, width, height);
+  // check_result(output, control_output, nkernels, width, height);
 
   return 0;
 }
