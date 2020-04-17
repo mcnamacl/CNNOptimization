@@ -586,8 +586,6 @@ int main(int argc, char **argv)
     // Used when testing the code to compare timings.
     // multichannel_conv_sparse(image, sparse_kernels, output, width,
     //                  height, nchannels, nkernels, kernel_order);
-    // multichannel_conv_sparse(image, sparse_kernels, output, width,
-    //                  height, nchannels, nkernels, kernel_order);
 
     team_conv_sparse(image, sparse_kernels, output, width,
                      height, nchannels, nkernels, kernel_order);
